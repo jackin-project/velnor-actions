@@ -15,9 +15,9 @@ on:
   workflow_dispatch:
     inputs:
       lane:
-        description: "CI lane: velnor (default), github, or both."
+        description: "CI lane: github (default), velnor, or both."
         type: choice
-        default: velnor
+        default: github
         options:
           - velnor
           - github

@@ -29,7 +29,7 @@ fn resolve_lanes_expands_both_independently() {
 #[test]
 fn default_lane_is_velnor_in_template() {
     let t = render::consumer_template(RepositoryClass::Code);
-    assert!(t.contains("default: velnor"));
+    assert!(t.contains("default: github"));
     assert!(
         t.contains("|| 'velnor'"),
         "non-dispatch events default to velnor"
