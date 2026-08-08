@@ -12,10 +12,10 @@ on:
   workflow_call:
     inputs:
       lane:
-        description: "CI lane: velnor (default), github, or both."
+        description: "CI lane: github (default), velnor, or both."
         required: false
         type: string
-        default: velnor
+        default: github
     outputs:
       contract:
         description: "'success' only when every selected lane passed its applicable gates."

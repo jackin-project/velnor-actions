@@ -123,10 +123,10 @@ pub fn consumer_template(class: RepositoryClass) -> String {
     b.line(6, "lane:");
     b.line(
         8,
-        "description: \"CI lane: velnor (default), github, or both.\"",
+        "description: \"CI lane: github (default), velnor, or both.\"",
     );
     b.line(8, "type: choice");
-    b.line(8, "default: velnor");
+    b.line(8, "default: github");
     b.line(8, "options:");
     b.line(10, "- velnor");
     b.line(10, "- github");
@@ -247,11 +247,11 @@ pub fn callable_workflow(contract: &ClassContract, block_sha: &str) -> String {
     b.line(6, "lane:");
     b.line(
         8,
-        "description: \"CI lane: velnor (default), github, or both.\"",
+        "description: \"CI lane: github (default), velnor, or both.\"",
     );
     b.line(8, "required: false");
     b.line(8, "type: string");
-    b.line(8, "default: velnor");
+    b.line(8, "default: github");
     b.line(4, "outputs:");
     b.line(6, "contract:");
     b.line(
