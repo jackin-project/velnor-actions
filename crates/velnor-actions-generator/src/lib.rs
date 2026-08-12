@@ -11,6 +11,7 @@ pub mod audit;
 pub mod cache;
 pub mod composite;
 pub mod model;
+pub mod package;
 pub mod render;
 
 /// One of the four normalized repository classes the fleet generator maps every
@@ -94,6 +95,7 @@ pub fn validate_layout(root: &Path) -> Result<(), String> {
 pub fn generate(root: &Path) -> Result<Vec<PathBuf>, String> {
     let manifest = model::FleetManifest::load(root)?;
     let caches = cache::CacheContract::load(&root.join("fleet").join("caches.toml"))?;
+    let packages = package::PackagePolicy::load(root)?;
     let mut written = Vec::new();
 
     // Composite building blocks: canonical bytes live in `composite`, so they are
@@ -135,6 +137,26 @@ pub fn generate(root: &Path) -> Result<Vec<PathBuf>, String> {
             write_if_changed(&path, &body)?;
             written.push(path);
         }
+        let updater = packages.render_updater();
+        for (name, body) in [
+            ("package-signer.yml", package::SIGNER_WORKFLOW),
+            ("package-updater.yml", updater.as_str()),
+        ] {
+            let path = dir.join(name);
+            write_if_changed(&path, body)?;
+            written.push(path);
+        }
+        for (class, body) in [
+            ("tap", package::TAP_TEMPLATE),
+            ("apt", package::APT_TEMPLATE),
+        ] {
+            let path = root
+                .join("templates")
+                .join(class)
+                .join("package-update.yml");
+            write_if_changed(&path, body)?;
+            written.push(path);
+        }
     }
 
     Ok(written)
@@ -167,6 +189,24 @@ pub fn render_consumer_to_dir(
     std::fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
     let path = dir.join("ci.yml");
     std::fs::write(&path, &body).map_err(|e| format!("writing {}: {e}", path.display()))?;
+    Ok(path)
+}
+
+/// Materialize one package consumer's owner-routed updater workflow.
+pub fn render_package_consumer_to_dir(
+    root: &Path,
+    repository: &str,
+    release_sha: &str,
+    calver: &str,
+    old_signer: Option<(&str, &str, &str)>,
+    output: &Path,
+) -> Result<PathBuf, String> {
+    let policy = package::PackagePolicy::load(root)?;
+    let body = policy.render_consumer(repository, release_sha, calver, old_signer)?;
+    let dir = output.join(".github").join("workflows");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+    let path = dir.join("package-update.yml");
+    std::fs::write(&path, body).map_err(|e| format!("writing {}: {e}", path.display()))?;
     Ok(path)
 }
 
