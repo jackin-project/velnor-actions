@@ -79,7 +79,7 @@ permissions:
 jobs:
   validate-request:
     name: validate request
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.lane == 'github' && 'ubuntu-26.04' || 'velnor-trusted' }}
     timeout-minutes: 5
     permissions:
       actions: read
@@ -114,7 +114,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
-          EXPECTED_CALLER_TEMPLATE_SHA256: cc34fd81cdafd5944943ec5df4f5124784e74fc120dc58f1bb9b63578a80a16d
+          EXPECTED_CALLER_TEMPLATE_SHA256: 8560f10161009bf30ded3876ab9bf4ec32ac7067a5bcaa16cdc80eaf8da07cb7
           DECLARED_CACHE_IDS: tools
         run: |
           set -euo pipefail
@@ -2136,7 +2136,7 @@ jobs:
       - github-lane
       - cache-proof-contract
     if: ${{ always() }}
-    runs-on: ubuntu-26.04
+    runs-on: ${{ inputs.lane == 'github' && 'ubuntu-26.04' || 'velnor-trusted' }}
     timeout-minutes: 10
     outputs:
       contract: ${{ steps.verdict.outputs.contract }}

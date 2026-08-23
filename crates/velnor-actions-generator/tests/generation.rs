@@ -29,12 +29,15 @@ fn consumer_weekly_schedule_defaults_to_velnor() {
     for class in ALL_CLASSES {
         let rendered = render::consumer_template(class);
         assert!(rendered.contains("  schedule:\n    - cron: \"23 3 * * 0\"\n"));
-        assert!(
-            rendered
-                .contains("github.event_name == 'workflow_dispatch' && inputs.lane || 'velnor'")
-        );
+        assert!(rendered.contains(
+            "github.event_name == 'workflow_dispatch' && inputs.lane || github.event_name == 'push' && 'github' || 'velnor'"
+        ));
         assert!(!rendered.contains("github.event_name == 'schedule' && 'both'"));
-        assert!(rendered.contains("runs-on: ${{ 'ubuntu-26.04' }}"));
+        // ci-required defaults to the Velnor lane; post-merge push routes to
+        // the GitHub lane (fleet rejects it on velnor-trusted).
+        assert!(rendered.contains(
+            "runs-on: ${{ github.event_name == 'push' && 'ubuntu-26.04' || fromJSON('[\"self-hosted\",\"velnor-target-mvp\"]') }}"
+        ));
         assert!(!rendered.contains("ubuntu-latest"));
     }
 }
@@ -622,43 +625,43 @@ fn release_goldens_bind_consumer_interface_and_callable_metrics_schema() {
     for (path, expected) in [
         (
             "templates/code/ci.yml",
-            "b8f2548e8219e8a4ba34eb628eea07b3cc5e9150b8244dd408b1fe11dc908c3d",
+            "4eb778e56a06464e46483b35a9898cc905529c516c9bbd37ded6716006ca6020",
         ),
         (
             "templates/native/ci.yml",
-            "21098f543ec6f227072d2827b77e9fa2015fc206a3d3594fc649b60e6f89ed4f",
+            "e68b1953fda0ffe0706f5cc754f9c48085ccf8e8c2d0f04d735a7ad26bec6129",
         ),
         (
             "templates/tap/ci.yml",
-            "9c4c4a82f091a8e659406f2908e2f04692c4012d08c4898d0ff5ac326183cc4a",
+            "a38df59d12dbf2abd2d7db895a48a3f71caaa38389e5748a351693f0e15c1acd",
         ),
         (
             "templates/apt/ci.yml",
-            "cc34fd81cdafd5944943ec5df4f5124784e74fc120dc58f1bb9b63578a80a16d",
+            "8560f10161009bf30ded3876ab9bf4ec32ac7067a5bcaa16cdc80eaf8da07cb7",
         ),
         (
             "templates/fixture/ci.yml",
-            "e49e23525d6a5a420b5a35599bbfec6f75ce740da58f7b43d3d2b79f90cd208e",
+            "606a8807b1b38266ae3b6138c69a6b57178043861f256afc71d6cfb9280b0656",
         ),
         (
             ".github/workflows/ci-code.yml",
-            "1bb159d821275e4ef0629267da5cd2df2f8cb4f5f475311f8e3f0e7eb75f6437",
+            "b4b325bc1b70faae406eaacca737782b8022a504fd24a8598ac60d241304ba2e",
         ),
         (
             ".github/workflows/ci-native.yml",
-            "a9913d5782f3888063201cd841af1cf8205e3dd514378565a4b6ece1def1fe77",
+            "aeaafaddc36743219f712e87ef3839558be195a49bd53e7baa9d0798d385b970",
         ),
         (
             ".github/workflows/ci-tap.yml",
-            "213fe967c0362cafed6fbfebda8d9b8fd1e59025d02a590353d6c287c1e4770c",
+            "21a2562904e77fcaca12b9e0ef3cdf62902baa546d4f8e969ed9a29ab24fc765",
         ),
         (
             ".github/workflows/ci-apt.yml",
-            "111318ed1e787697eabe3c09f149468170a868f9e357581cb113c0964656b3bf",
+            "c90562ecddeb1e4acc8c2e6e9d3068d2503a717e692217b051a1ae1ee4204e3c",
         ),
         (
             ".github/workflows/ci-fixture.yml",
-            "378d1d0c579e5f57ff2823125d618268ca5919a59b51491dd31f0a67a2b3c545",
+            "974f19134beb5dbbf5f4b88a2885ed0eb2e3d84858df87b0482cb38fccf9b973",
         ),
     ] {
         let bytes = std::fs::read(root.join(path)).unwrap();
