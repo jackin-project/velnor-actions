@@ -148,18 +148,12 @@ pub fn consumer_template(class: RepositoryClass) -> String {
     b.line(4, "- cron: \"23 3 * * 0\"");
     b.line(2, "workflow_dispatch:");
     b.line(4, "inputs:");
-    b.line(6, "lane:");
-    b.line(
-        8,
-        "description: \"CI runner: Velnor (default), GitHub, or both.\"",
-    );
-    b.line(8, "required: false");
+    // Canonical lane selector, byte-identical across all fleet workflows.
+    b.line(6, "lanes:");
+    b.line(8, "description: velnor (default) | github | both");
     b.line(8, "type: choice");
     b.line(8, "default: velnor");
-    b.line(8, "options:");
-    b.line(10, "- velnor");
-    b.line(10, "- github");
-    b.line(10, "- both");
+    b.line(8, "options: [velnor, github, both]");
     consumer_auxiliary_inputs(&mut b);
     b.blank();
     b.line(0, "permissions:");
@@ -200,7 +194,7 @@ pub fn consumer_template(class: RepositoryClass) -> String {
         // default workflow_dispatch; the lane input remains the escape hatch.
         b.line(
             6,
-            "lane: ${{ github.event_name == 'workflow_dispatch' && inputs.lane || github.event_name == 'push' && 'github' || 'velnor' }}",
+            "lane: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || github.event_name == 'push' && 'github' || 'velnor' }}",
         );
         for input in AUXILIARY_INPUTS {
             b.line(6, &format!("{input}: ${{{{ inputs.{input} || '' }}}}"));
@@ -217,11 +211,12 @@ pub fn consumer_template(class: RepositoryClass) -> String {
     }
     b.line(4, "if: ${{ always() }}");
     // Default to the Velnor lane. Post-merge push events are rejected on
-    // velnor-trusted (merged_push_occupancy), so push routes to the GitHub
-    // lane, matching the lane pass-through above. actionlint v1.7.12 does
-    // not yet recognize the Ubuntu 26.04 hosted label when it is a literal,
-    // so both bindings stay behind expressions.
-    b.line(4, "runs-on: ${{ github.event_name == 'push' && 'ubuntu-26.04' || fromJSON('[\"self-hosted\",\"velnor-target-mvp\"]') }}");
+    // velnor-trusted (merged_push_occupancy), so push — and an explicit
+    // lanes=github dispatch — routes to the GitHub lane, matching the lane
+    // pass-through above. actionlint v1.7.12 does not yet recognize the
+    // Ubuntu 26.04 hosted label when it is a literal, so both bindings stay
+    // behind expressions.
+    b.line(4, "runs-on: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') || github.event_name == 'push') && 'ubuntu-26.04' || fromJSON('[\"self-hosted\",\"velnor-target-mvp\"]') }}");
     b.line(4, "timeout-minutes: 10");
     b.line(4, "permissions:");
     b.line(6, "contents: read");
