@@ -212,13 +212,14 @@ pub fn consumer_template(class: RepositoryClass) -> String {
         b.line(6, &format!("- {owner}"));
     }
     b.line(4, "if: ${{ always() }}");
-    // Default to the Velnor lane. Post-merge push events are rejected on
-    // velnor-trusted (merged_push_occupancy), so push — and an explicit
-    // lanes=github dispatch — routes to the GitHub lane, matching the lane
-    // pass-through above. actionlint v1.7.12 does not yet recognize the
-    // Ubuntu 26.04 hosted label when it is a literal, so both bindings stay
-    // behind expressions.
-    b.line(4, "runs-on: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') || github.event_name == 'push') && 'ubuntu-26.04' || fromJSON('[\"self-hosted\",\"velnor-target-mvp\"]') }}");
+    // Fleet-independent: the aggregator only enforces the fleet contract, it
+    // does not need a self-hosted runner. Pinning it to velnor-target-mvp
+    // made the required status check queue forever whenever the fleet was
+    // offline, blocking every merge org-wide (fleet outage 2026-08-27; hand
+    // fix proven in tailrocks/holla#180). actionlint v1.7.12 does not yet
+    // recognize the Ubuntu 26.04 hosted label when it is a literal, so the
+    // binding stays behind an expression.
+    b.line(4, "runs-on: ${{ 'ubuntu-26.04' }}");
     b.line(4, "timeout-minutes: 10");
     b.line(4, "permissions:");
     b.line(6, "contents: read");
