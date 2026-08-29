@@ -42,6 +42,9 @@ const CHECKOUT_VERSION: &str = "v7.0.1";
 /// Pinned mise setup action (full 40-hex SHA) and its version comment.
 const MISE_ACTION_REF: &str = "7e36c90d9ab29c415a2384db3006f3ec8a8cc654";
 const MISE_ACTION_VERSION: &str = "v4.2.4";
+/// Pinned local compiler-cache action.
+const SCCACHE_ACTION_REF: &str = "fc920bf0ec8de6ee65d409111f7ec508035751ba";
+const SCCACHE_ACTION_VERSION: &str = "v0.0.11";
 /// Default platform-lane job timeout unless a class overrides it.
 const DEFAULT_PLATFORM_TIMEOUT_MINUTES: u32 = 30;
 /// Pinned GitHub cache action.
@@ -190,13 +193,13 @@ pub fn consumer_template(class: RepositoryClass) -> String {
             ),
         );
         b.line(4, "with:");
-        // Fleet policy: post-merge push events are rejected on velnor-trusted
-        // (merged_push_occupancy), so generated callers route push to the
-        // GitHub lane. Velnor stays the default for every other event and for
-        // default workflow_dispatch; the lane input remains the escape hatch.
+        // Public unmerged code and post-merge pushes stay on GitHub-hosted
+        // runners until lower-trust Velnor isolation is live-proven. Scheduled
+        // runs and the default workflow_dispatch remain Velnor; dispatch keeps
+        // the explicit lane escape hatch.
         b.line(
             6,
-            "lane: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || github.event_name == 'push' && 'github' || 'velnor' }}",
+            "lane: ${{ github.event_name == 'workflow_dispatch' && inputs.lanes || (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push') && 'github' || 'velnor' }}",
         );
         for input in AUXILIARY_INPUTS {
             b.line(6, &format!("{input}: ${{{{ inputs.{input} || '' }}}}"));
@@ -212,14 +215,12 @@ pub fn consumer_template(class: RepositoryClass) -> String {
         b.line(6, &format!("- {owner}"));
     }
     b.line(4, "if: ${{ always() }}");
-    // Fleet-independent: the aggregator only enforces the fleet contract, it
-    // does not need a self-hosted runner. Pinning it to velnor-target-mvp
-    // made the required status check queue forever whenever the fleet was
-    // offline, blocking every merge org-wide (fleet outage 2026-08-27; hand
-    // fix proven in tailrocks/holla#180). actionlint v1.7.12 does not yet
-    // recognize the Ubuntu 26.04 hosted label when it is a literal, so the
-    // binding stays behind an expression.
-    b.line(4, "runs-on: ${{ 'ubuntu-26.04' }}");
+    // Public unmerged pull requests, merge queues, post-merge pushes, and an
+    // explicit lanes=github dispatch use GitHub-hosted infrastructure. The
+    // default scheduled/manual path remains Velnor. Keep both bindings behind
+    // expressions because actionlint does not recognize the Ubuntu 26.04
+    // hosted label as a literal.
+    b.line(4, "runs-on: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') || github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push') && 'ubuntu-26.04' || fromJSON('[\"self-hosted\",\"velnor-target-mvp\"]') }}");
     b.line(4, "timeout-minutes: 10");
     b.line(4, "permissions:");
     b.line(6, "contents: read");
@@ -433,6 +434,13 @@ pub fn callable_workflow(
     b.line(4, &format!("timeout-minutes: {lane_timeout}"));
     b.line(4, "outputs:");
     b.line(6, "contract: ${{ steps.aggregate.outputs.contract }}");
+    if matches!(class, RepositoryClass::Code | RepositoryClass::Native) {
+        b.line(4, "env:");
+        b.line(6, "CARGO_INCREMENTAL: \"0\"");
+        b.line(6, "RUSTC_WRAPPER: sccache");
+        b.line(6, "SCCACHE_CACHE_SIZE: 20G");
+        b.line(6, "SCCACHE_GHA_ENABLED: \"false\"");
+    }
     b.line(4, "steps:");
     lane_steps(
         &mut b,
@@ -456,6 +464,13 @@ pub fn callable_workflow(
     b.line(4, &format!("timeout-minutes: {lane_timeout}"));
     b.line(4, "outputs:");
     b.line(6, "contract: ${{ steps.aggregate.outputs.contract }}");
+    if matches!(class, RepositoryClass::Code | RepositoryClass::Native) {
+        b.line(4, "env:");
+        b.line(6, "CARGO_INCREMENTAL: \"0\"");
+        b.line(6, "RUSTC_WRAPPER: sccache");
+        b.line(6, "SCCACHE_CACHE_SIZE: 20G");
+        b.line(6, "SCCACHE_GHA_ENABLED: \"false\"");
+    }
     b.line(4, "steps:");
     lane_steps(
         &mut b,
@@ -2073,6 +2088,21 @@ fn lane_steps(
                 ),
             );
         }
+    }
+    if matches!(
+        contract.class,
+        RepositoryClass::Code | RepositoryClass::Native
+    ) {
+        b.line(6, "- name: Set up local sccache");
+        b.line(
+            8,
+            &format!(
+                "uses: mozilla-actions/sccache-action@{SCCACHE_ACTION_REF} # {SCCACHE_ACTION_VERSION}"
+            ),
+        );
+        b.line(8, "with:");
+        b.line(10, "version: v0.16.0");
+        b.line(10, "disable_annotations: \"false\"");
     }
     b.line(6, "- name: Set up mise toolchain");
     b.line(

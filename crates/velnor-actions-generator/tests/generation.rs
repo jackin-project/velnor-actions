@@ -30,15 +30,12 @@ fn consumer_weekly_schedule_defaults_to_velnor() {
         let rendered = render::consumer_template(class);
         assert!(rendered.contains("  schedule:\n    - cron: \"23 3 * * 0\"\n"));
         assert!(rendered.contains(
-            "github.event_name == 'workflow_dispatch' && inputs.lanes || github.event_name == 'push' && 'github' || 'velnor'"
+            "github.event_name == 'workflow_dispatch' && inputs.lanes || (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push') && 'github' || 'velnor'"
         ));
         assert!(!rendered.contains("github.event_name == 'schedule' && 'both'"));
-        // ci-required is fleet-independent: the aggregator only enforces the
-        // fleet contract, so a fleet outage must never block the required
-        // status check (tailrocks/holla#180).
-        assert!(rendered.contains("runs-on: ${{ 'ubuntu-26.04' }}"));
-        assert!(!rendered.contains(
-            "ci-required:\n    name: ci-required\n    needs:\n      - jackin-project\n      - tailrocks\n      - ChainArgos\n    if: ${{ always() }}\n    runs-on: ${{ ((github.event_name == 'workflow_dispatch'"
+        // ci-required follows the public-unmerged and post-merge GitHub route.
+        assert!(rendered.contains(
+            "runs-on: ${{ ((github.event_name == 'workflow_dispatch' && inputs.lanes == 'github') || github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push') && 'ubuntu-26.04' || fromJSON('[\"self-hosted\",\"velnor-target-mvp\"]') }}"
         ));
         assert!(!rendered.contains("ubuntu-latest"));
     }
@@ -447,6 +444,10 @@ fn updater_executes_explicit_current_then_old_signer_alternatives() {
     assert!(body.contains("--signer-digest \"$signer_digest\""));
     assert!(body.contains("$SOURCE_OWNER/velnor-actions/.github/workflows/package-signer.yml"));
     assert!(body.contains("$SOURCE_REPOSITORY/.github/workflows/preview.yml"));
+    assert!(body.contains("sort_by([.tag_name | ltrimstr(\"v\") | split(\".\") | map(tonumber)])"));
+    assert!(!body.contains("sort_by(.published_at)"));
+    assert!(body.contains("if: ${{ inputs.consumer-repository != '' }}"));
+    assert!(!body.contains("if: ${{ github.event_name == 'workflow_call' }}"));
     assert!(body.contains("keys == [\"accepted_signer_digest\",\"verification\"]"));
     assert!(body.contains("if length > 0 and all(.[];"));
     assert!(body.contains("jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654"));
@@ -632,43 +633,43 @@ fn release_goldens_bind_consumer_interface_and_callable_metrics_schema() {
     for (path, expected) in [
         (
             "templates/code/ci.yml",
-            "c7104bdccc9d3f6c6d11117ad7d0a6ee527f1a5ef9ab62f43127da262d83eda1",
+            "9985949ffab8ba11f496531d5f0a5720ff7e0fe6db2416989c063a819bfe59ac",
         ),
         (
             "templates/native/ci.yml",
-            "c8f8b2ca4054ce04cee0c92c867839e1d70c4bbb87244f0028bd118ef17bf08f",
+            "a535a04894935036ce3f5aacb511643e28e8fb878e3a34d375168d36e74f15f1",
         ),
         (
             "templates/tap/ci.yml",
-            "c574c69790f91327fc8ee57f10af902b597f0f91ee00313ad76d3dbf9a461c0a",
+            "0c46efcc6ff6ab00ed18803b0307342b02ec0a5e79080a4a36652fbfff3fb2b9",
         ),
         (
             "templates/apt/ci.yml",
-            "f430266f3d37a29c2fbf7842c1b05e6c5c6b29a27ee162a5553ce56a0652746a",
+            "6ce72e47eb7768638442a643843806274e940bef18afac3e18fa82b4f316b21c",
         ),
         (
             "templates/fixture/ci.yml",
-            "cbbfd274080675bd3538decee2a989023707186f8002ec9c31c803cf859deedc",
+            "70f093302ff6b4c9957a592db7456ca8b0c09a3c0518a5daf88742a2e6b8ad2e",
         ),
         (
             ".github/workflows/ci-code.yml",
-            "6607900604f8f983e37c8178ee6f85935884df1e52a2104d0db0d5c1f6c87985",
+            "ca4fac77d6f16aec779c80d112c77f87dace482a60a771aed374c6ed11bd9b69",
         ),
         (
             ".github/workflows/ci-native.yml",
-            "215c247ee98a46c304632ae48dcd34a03bec613d3f9284ed7a1c5e6a60574cd7",
+            "4d042b9fe8f95d12c91933a2f6459b8db04fbe7910366882f17fef56ac0e0c4e",
         ),
         (
             ".github/workflows/ci-tap.yml",
-            "d41d52e57e02a646926fc76521b0f6777297ed461663fdbd3bd6c0465dd74382",
+            "4400dea82645af4cf6dc51a31f666f4e857e4211b246deab4bda437562f66eb4",
         ),
         (
             ".github/workflows/ci-apt.yml",
-            "e54c0a17cf3e2bb1e7f60018575cc2efc5c8dd4bf3e798ab8927bb82b3a7e858",
+            "3ac2d6b6ff2a4457337c65e2fd1b0a53b12575f603256732dc778b7de00fded7",
         ),
         (
             ".github/workflows/ci-fixture.yml",
-            "18a2adeb9c381d92d09f175b2abbbc3afda7c683291243330a2d8cbfe419470c",
+            "ab63653d949c0302a252eb1306d0bbcbeed69a03ffbc277c188dee57cbcb6d73",
         ),
     ] {
         let bytes = std::fs::read(root.join(path)).unwrap();

@@ -121,7 +121,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
-          EXPECTED_CALLER_TEMPLATE_SHA256: c7104bdccc9d3f6c6d11117ad7d0a6ee527f1a5ef9ab62f43127da262d83eda1
+          EXPECTED_CALLER_TEMPLATE_SHA256: 9985949ffab8ba11f496531d5f0a5720ff7e0fe6db2416989c063a819bfe59ac
           DECLARED_CACHE_IDS: tools,dependencies,build-output
         run: |
           set -euo pipefail
@@ -231,6 +231,11 @@ jobs:
     timeout-minutes: 60
     outputs:
       contract: ${{ steps.aggregate.outputs.contract }}
+    env:
+      CARGO_INCREMENTAL: "0"
+      RUSTC_WRAPPER: sccache
+      SCCACHE_CACHE_SIZE: 20G
+      SCCACHE_GHA_ENABLED: "false"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -574,6 +579,11 @@ jobs:
           key: ci-v1/code/build-output/${{ runner.os }}-${{ runner.arch }}/${{ steps.cache-keys.outputs['build-output-toolchain'] }}/${{ steps.cache-keys.outputs['build-output-lock'] }}/${{ steps.cache-keys.outputs['build-output-phase'] }}
           restore-keys: |
             ci-v1/code/build-output/${{ runner.os }}-${{ runner.arch }}/${{ steps.cache-keys.outputs['build-output-toolchain'] }}/${{ steps.cache-keys.outputs['build-output-lock'] }}/
+      - name: Set up local sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
       - name: Set up mise toolchain
         uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
       - name: install gate
@@ -649,6 +659,11 @@ jobs:
     timeout-minutes: 60
     outputs:
       contract: ${{ steps.aggregate.outputs.contract }}
+    env:
+      CARGO_INCREMENTAL: "0"
+      RUSTC_WRAPPER: sccache
+      SCCACHE_CACHE_SIZE: 20G
+      SCCACHE_GHA_ENABLED: "false"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -818,6 +833,11 @@ jobs:
           key: ci-v1/code/build-output/${{ runner.os }}-${{ runner.arch }}/${{ steps.cache-keys.outputs['build-output-toolchain'] }}/${{ steps.cache-keys.outputs['build-output-lock'] }}/${{ steps.cache-keys.outputs['build-output-phase'] }}
           restore-keys: |
             ci-v1/code/build-output/${{ runner.os }}-${{ runner.arch }}/${{ steps.cache-keys.outputs['build-output-toolchain'] }}/${{ steps.cache-keys.outputs['build-output-lock'] }}/
+      - name: Set up local sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.16.0
+          disable_annotations: "false"
       - name: Set up mise toolchain
         uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
       - name: install gate

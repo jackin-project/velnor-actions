@@ -121,7 +121,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
-          EXPECTED_CALLER_TEMPLATE_SHA256: f430266f3d37a29c2fbf7842c1b05e6c5c6b29a27ee162a5553ce56a0652746a
+          EXPECTED_CALLER_TEMPLATE_SHA256: 6ce72e47eb7768638442a643843806274e940bef18afac3e18fa82b4f316b21c
           DECLARED_CACHE_IDS: tools
         run: |
           set -euo pipefail
