@@ -101,10 +101,12 @@ jobs:
           OLD_SIGNER_DIGEST=$(toml_value old_signer_digest)
           OLD_SIGNER_ACTIVATED_AT=$(toml_value old_signer_activated_at)
           OLD_SIGNER_EXPIRES_AT=$(toml_value old_signer_expires_at)
-          printf 'CURRENT_SIGNER_DIGEST=%s\n' "$CURRENT_SIGNER_DIGEST" >> "$GITHUB_ENV"
-          printf 'OLD_SIGNER_DIGEST=%s\n' "$OLD_SIGNER_DIGEST" >> "$GITHUB_ENV"
-          printf 'OLD_SIGNER_ACTIVATED_AT=%s\n' "$OLD_SIGNER_ACTIVATED_AT" >> "$GITHUB_ENV"
-          printf 'OLD_SIGNER_EXPIRES_AT=%s\n' "$OLD_SIGNER_EXPIRES_AT" >> "$GITHUB_ENV"
+          {
+            printf 'CURRENT_SIGNER_DIGEST=%s\n' "$CURRENT_SIGNER_DIGEST"
+            printf 'OLD_SIGNER_DIGEST=%s\n' "$OLD_SIGNER_DIGEST"
+            printf 'OLD_SIGNER_ACTIVATED_AT=%s\n' "$OLD_SIGNER_ACTIVATED_AT"
+            printf 'OLD_SIGNER_EXPIRES_AT=%s\n' "$OLD_SIGNER_EXPIRES_AT"
+          } >> "$GITHUB_ENV"
           [[ "$SOURCE_REPOSITORY" =~ ^(jackin-project|tailrocks)/[a-z0-9][a-z0-9._-]*$ ]]
           mkdir -m 0700 verified
           printf '%s\n' "$CHANNEL" > verified/channel
