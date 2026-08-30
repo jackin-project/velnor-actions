@@ -68,6 +68,11 @@ description = "Fetch pinned remote actions and verify their recursive executable
 depends = ["_toolchain"]
 run = "cargo run --locked -p velnor-actions-generator -- verify-remote --root ."
 
+[tasks.release-check]
+description = "Resolve the declared release tag and prove all owner forks are byte-identical"
+depends = ["_toolchain"]
+run = "cargo run --locked -p velnor-actions-generator -- release-check --root . --release 2026.8.32"
+
 [tasks.ci]
 description = "Run every repository gate"
 depends = ["fmt", "lint", "test", "actionlint", "deny", "generator-check", "remote-closure-check"]

@@ -1,0 +1,67 @@
+schema = "velnor-actions.releases.v1"
+
+[[release]]
+calver = "2026.8.32"
+
+[[release.fork]]
+owner = "jackin-project"
+repository = "jackin-project/velnor-actions"
+sha = "796dfcd26d4110319c8363155d2eae6885114893"
+
+[[release.fork]]
+owner = "tailrocks"
+repository = "tailrocks/velnor-actions"
+sha = "c222e52030fee9ea6eae573a5769770be01d8438"
+
+[[release.fork]]
+owner = "ChainArgos"
+repository = "ChainArgos/velnor-actions"
+sha = "77173e8e71aa18e60d21f9f0d1ae57c0695d0233"
+
+[[release.signer]]
+consumer = "jackin-project/homebrew-tap"
+source = "jackin-project/jackin"
+signer_fork = "jackin-project/velnor-actions"
+current_signer_digest = "eeb8a182174f3c97c370ecf3f1e3e4689ae22cfe"
+old_signer_digest = "a1ff41d323ab0d87bcb6407e14aee406b32a6cb0"
+old_signer_activated_at = "2026-08-30T00:00:00Z"
+old_signer_expires_at = "2026-09-13T00:00:00Z"
+
+[[release.signer]]
+consumer = "tailrocks/homebrew-tablerock"
+source = "tailrocks/tablerock"
+signer_fork = "tailrocks/velnor-actions"
+current_signer_digest = "1e062d5bbe329873047ee8a8e79bba0811e53b65"
+
+[[release.signer]]
+consumer = "tailrocks/homebrew-parallax"
+source = "tailrocks/parallax"
+signer_fork = "tailrocks/velnor-actions"
+current_signer_digest = "643c5341b160be151a7fae19b89b6a4f8ab3b275"
+
+[[release.signer]]
+consumer = "tailrocks/homebrew-holla"
+source = "tailrocks/holla"
+signer_fork = "tailrocks/velnor-actions"
+current_signer_digest = "84a3d2c5f8f74a3054259ac494581b244bf61ee7"
+old_signer_digest = "643c5341b160be151a7fae19b89b6a4f8ab3b275"
+old_signer_activated_at = "2026-08-30T00:00:00Z"
+old_signer_expires_at = "2026-09-13T00:00:00Z"
+
+[[release.signer]]
+consumer = "tailrocks/velnor-apt"
+source = "tailrocks/velnor"
+signer_fork = "tailrocks/velnor-actions"
+current_signer_digest = "77d323dcfdb176b332edc24bfc92cb625b3ab4c8"
+old_signer_digest = "643c5341b160be151a7fae19b89b6a4f8ab3b275"
+old_signer_activated_at = "2026-08-30T00:00:00Z"
+old_signer_expires_at = "2026-09-13T00:00:00Z"
+
+[[release.signer]]
+consumer = "tailrocks/holla-apt"
+source = "tailrocks/holla"
+signer_fork = "tailrocks/velnor-actions"
+current_signer_digest = "84a3d2c5f8f74a3054259ac494581b244bf61ee7"
+old_signer_digest = "643c5341b160be151a7fae19b89b6a4f8ab3b275"
+old_signer_activated_at = "2026-08-30T00:00:00Z"
+old_signer_expires_at = "2026-09-13T00:00:00Z"

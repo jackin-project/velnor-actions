@@ -339,6 +339,9 @@ fn request_validator_result(overrides: &[(&str, &str)]) -> (bool, String) {
             render::consumer_template(RepositoryClass::Code).as_bytes(),
         )),
     );
+    let fake_bin = fake_recovery_gh();
+    let fake_path = format!("{}:{}", fake_bin.display(), std::env::var("PATH").unwrap());
+    command.env("PATH", fake_path);
     for (key, value) in overrides {
         command.env(key, value);
     }
