@@ -1,16 +1,15 @@
 schema = "velnor-actions.forks.v1"
+repository = "velnor-actions"
+canonical_owner = "tailrocks"
 
 [[fork]]
 owner = "jackin-project"
-repository = "jackin-project/velnor-actions"
 placeholder = "@JACKIN_FLEET_SHA@"
 
 [[fork]]
 owner = "tailrocks"
-repository = "tailrocks/velnor-actions"
 placeholder = "@TAILROCKS_FLEET_SHA@"
 
 [[fork]]
 owner = "ChainArgos"
-repository = "ChainArgos/velnor-actions"
 placeholder = "@CHAINARGOS_FLEET_SHA@"

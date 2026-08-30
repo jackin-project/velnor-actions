@@ -15,8 +15,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use velnor_actions_generator::{
-    ALL_CLASSES, REQUIRED_LAYOUT, audit, generate, release_check, render_consumer_to_dir,
-    render_package_consumer_to_dir, validate_layout,
+    ALL_CLASSES, REQUIRED_LAYOUT, audit, generate, render_consumer_to_dir,
+    render_package_consumer_to_dir, tools, validate_layout,
 };
 
 fn main() -> ExitCode {
@@ -39,8 +39,9 @@ fn run(mut args: impl Iterator<Item = String>) -> Result<String, String> {
         Some("render-consumer") => run_render_consumer(args),
         Some("render-package-consumer") => run_render_package_consumer(args),
         Some("audit") => run_audit(args),
-        Some("release-check") => run_release_check(args),
         Some("verify-remote") => run_verify_remote(args),
+        Some("release-check") => run_release_check(args),
+        Some("tool-registry") => run_tool_registry(args),
         Some(other) => Err(format!("unknown subcommand: {other}")),
         None => Err(
             "missing subcommand (expected: check, generate, render-consumer, or audit)".to_string(),
@@ -91,6 +92,20 @@ fn run_render_package_consumer(mut args: impl Iterator<Item = String>) -> Result
         &output,
     )?;
     Ok(format!("rendered {}", path.display()))
+}
+
+fn run_release_check(mut args: impl Iterator<Item = String>) -> Result<String, String> {
+    let mut root: Option<PathBuf> = None;
+    let mut release: Option<String> = None;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--root" => root = Some(PathBuf::from(require_value(&mut args, "--root")?)),
+            "--release" => release = Some(require_value(&mut args, "--release")?),
+            other => return Err(format!("unexpected argument: {other}")),
+        }
+    }
+    let root = root.ok_or("release-check requires --root PATH")?;
+    audit::release_check(&root, release.as_deref())
 }
 
 fn run_verify_remote(mut args: impl Iterator<Item = String>) -> Result<String, String> {
@@ -147,18 +162,34 @@ fn run_audit(mut args: impl Iterator<Item = String>) -> Result<String, String> {
     audit::audit(&root)
 }
 
-fn run_release_check(mut args: impl Iterator<Item = String>) -> Result<String, String> {
+fn run_tool_registry(mut args: impl Iterator<Item = String>) -> Result<String, String> {
     let mut root = PathBuf::from(".");
-    let mut calver = None;
+    let mut registry_path = None;
+    let mut fleet_path = None;
+    let mut mise_path = None;
+    let mut lock_path = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--root" => root = PathBuf::from(require_value(&mut args, "--root")?),
-            "--release" | "--calver" => calver = Some(require_value(&mut args, "--release")?),
+            "--registry" => {
+                registry_path = Some(PathBuf::from(require_value(&mut args, "--registry")?))
+            }
+            "--fleet" => fleet_path = Some(PathBuf::from(require_value(&mut args, "--fleet")?)),
+            "--mise" => mise_path = Some(PathBuf::from(require_value(&mut args, "--mise")?)),
+            "--lock" => lock_path = Some(PathBuf::from(require_value(&mut args, "--lock")?)),
             other => return Err(format!("unexpected argument: {other}")),
         }
     }
-    let calver = calver.ok_or("release-check requires --release CALVER")?;
-    release_check(&root, &calver)
+    let registry =
+        tools::ToolRegistry::load(&registry_path.unwrap_or_else(|| tools::registry_path(&root)))?;
+    let count = match fleet_path {
+        Some(path) => registry.check_fleet(&root, &path)?,
+        None => registry.check_files(
+            &mise_path.unwrap_or_else(|| root.join("mise.toml")),
+            &lock_path.unwrap_or_else(|| root.join("mise.lock")),
+        )?,
+    };
+    Ok(format!("tool registry valid: {count} effective tools"))
 }
 
 fn run_render_consumer(mut args: impl Iterator<Item = String>) -> Result<String, String> {

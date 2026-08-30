@@ -4,6 +4,9 @@ use serde::Deserialize;
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use crate::forks::ForkTable;
+use crate::releases::ReleaseTable;
+
 const POLICY_SCHEMA: &str = "velnor-actions.package-policy.v1";
 const TAP_CONSUMERS: [&str; 4] = [
     "jackin-project/homebrew-tap",
@@ -13,16 +16,24 @@ const TAP_CONSUMERS: [&str; 4] = [
 ];
 const APT_CONSUMERS: [&str; 2] = ["tailrocks/holla-apt", "tailrocks/velnor-apt"];
 
+#[derive(Debug)]
+pub struct PackagePolicy {
+    schema: String,
+    consumer: Vec<Consumer>,
+    forks: ForkTable,
+    releases: ReleaseTable,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct PackagePolicy {
+struct PackageFile {
     schema: String,
     consumer: Vec<Consumer>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Consumer {
+struct Consumer {
     slug: String,
     kind: String,
     source: String,
@@ -34,13 +45,22 @@ pub struct Consumer {
 }
 
 impl PackagePolicy {
-    pub fn load(root: &Path) -> Result<Self, String> {
+    pub fn load(root: &Path, forks: &ForkTable) -> Result<Self, String> {
         let path = root.join("fleet/packages.toml");
         let bytes = std::fs::read_to_string(&path)
             .map_err(|e| format!("reading {}: {e}", path.display()))?;
-        let policy: Self =
+        let file: PackageFile =
             toml::from_str(&bytes).map_err(|e| format!("parsing {}: {e}", path.display()))?;
+        let policy = Self {
+            schema: file.schema,
+            consumer: file.consumer,
+            forks: forks.clone(),
+            releases: ReleaseTable::load(root)?,
+        };
         policy.validate()?;
+        policy
+            .releases
+            .validate_consumers(policy.consumer.iter().map(|row| row.slug.clone()), forks)?;
         Ok(policy)
     }
 
@@ -134,16 +154,6 @@ impl PackagePolicy {
         Ok(())
     }
 
-    /// Package consumers are the exact six rows that must have release signer
-    /// entries; the release table owns their digest history.
-    pub fn consumer_slugs(&self) -> impl Iterator<Item = &str> {
-        self.consumer.iter().map(|row| row.slug.as_str())
-    }
-
-    pub fn consumer(&self, repository: &str) -> Option<&Consumer> {
-        self.consumer.iter().find(|row| row.slug == repository)
-    }
-
     pub fn render_updater(&self) -> String {
         let mut policy_cases = String::new();
         let mut source_cases = String::new();
@@ -196,16 +206,41 @@ impl PackagePolicy {
             .iter()
             .find(|row| row.slug == repository)
             .ok_or_else(|| format!("{repository:?} is not a package consumer"))?;
+        let release = self
+            .releases
+            .by_calver(calver)
+            .ok_or_else(|| format!("release table has no row for {calver}"))?;
+        let signer = release
+            .signer_for(repository)
+            .ok_or_else(|| format!("release {calver} has no signer row for {repository}"))?;
+        if release_shas.len() != self.forks.len() {
+            return Err("release SHA count does not match the fork table".into());
+        }
         let template = match row.kind.as_str() {
             "tap" => TAP_TEMPLATE,
             "apt" => APT_TEMPLATE,
             _ => return Err("package policy contains an unknown kind".into()),
         };
-        let rendered = template
-            .replace("@JACKIN_FLEET_SHA@", release_shas[0])
-            .replace("@TAILROCKS_FLEET_SHA@", release_shas[1])
-            .replace("@CHAINARGOS_FLEET_SHA@", release_shas[2])
+        let mut rendered = template.to_string();
+        for (fork, sha) in self.forks.forks().iter().zip(release_shas) {
+            rendered = rendered.replace(fork.placeholder(), sha);
+        }
+        let rendered = rendered
             .replace("@CALVER@", calver)
+            .replace("@SIGNER_FORK@", signer.signer_fork())
+            .replace("@CURRENT_SIGNER_DIGEST@", signer.current_digest())
+            .replace(
+                "@OLD_SIGNER_DIGEST@",
+                signer.old_digest().unwrap_or_default(),
+            )
+            .replace(
+                "@OLD_SIGNER_ACTIVATED_AT@",
+                signer.old_activated_at().unwrap_or_default(),
+            )
+            .replace(
+                "@OLD_SIGNER_EXPIRES_AT@",
+                signer.old_expires_at().unwrap_or_default(),
+            )
             .replace(
                 "@PACKAGE_CHANNELS@",
                 if row.slug == "jackin-project/homebrew-tap" {
@@ -214,24 +249,26 @@ impl PackagePolicy {
                     "[stable]"
                 },
             );
-        for placeholder in [
-            "@JACKIN_FLEET_SHA@",
-            "@TAILROCKS_FLEET_SHA@",
-            "@CHAINARGOS_FLEET_SHA@",
-            "@CALVER@",
-            "@PACKAGE_CHANNELS@",
-        ] {
+        for placeholder in self
+            .forks
+            .forks()
+            .iter()
+            .map(|fork| fork.placeholder())
+            .chain([
+                "@CALVER@",
+                "@SIGNER_FORK@",
+                "@CURRENT_SIGNER_DIGEST@",
+                "@OLD_SIGNER_DIGEST@",
+                "@OLD_SIGNER_ACTIVATED_AT@",
+                "@OLD_SIGNER_EXPIRES_AT@",
+                "@PACKAGE_CHANNELS@",
+            ])
+        {
             if rendered.contains(placeholder) {
                 return Err(format!("package consumer rendering left {placeholder}"));
             }
         }
         Ok(rendered)
-    }
-}
-
-impl Consumer {
-    pub fn source(&self) -> &str {
-        &self.source
     }
 }
 
