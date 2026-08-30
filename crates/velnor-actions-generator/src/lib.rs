@@ -12,6 +12,7 @@ pub mod cache;
 pub mod composite;
 pub mod model;
 pub mod package;
+pub mod release;
 pub mod render;
 
 /// One of the five normalized repository classes the fleet generator maps every
@@ -100,6 +101,8 @@ pub fn generate(root: &Path) -> Result<Vec<PathBuf>, String> {
     let manifest = model::FleetManifest::load(root)?;
     let caches = cache::CacheContract::load(&root.join("fleet").join("caches.toml"))?;
     let packages = package::PackagePolicy::load(root)?;
+    let releases = release::ReleasePolicy::load(root)?;
+    releases.validate_against(&packages, manifest.forks())?;
     let mut written = Vec::new();
 
     // Composite building blocks: canonical bytes live in `composite`, so they are
@@ -115,7 +118,7 @@ pub fn generate(root: &Path) -> Result<Vec<PathBuf>, String> {
     }
 
     for class in ALL_CLASSES {
-        let body = render::consumer_template(class);
+        let body = render::consumer_template_with_forks(class, manifest.forks());
         let dir = root.join("templates").join(class.code());
         std::fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
         let path = dir.join("ci.yml");
@@ -136,7 +139,12 @@ pub fn generate(root: &Path) -> Result<Vec<PathBuf>, String> {
         let dir = root.join(".github").join("workflows");
         std::fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
         for class in ALL_CLASSES {
-            let body = render::callable_workflow(manifest.class(class), &caches, block_sha);
+            let body = render::callable_workflow_with_forks(
+                manifest.class(class),
+                &caches,
+                block_sha,
+                manifest.forks(),
+            );
             let path = dir.join(render::callable_file_name(class));
             write_if_changed(&path, &body)?;
             written.push(path);
@@ -187,8 +195,9 @@ pub fn render_consumer_to_dir(
         .iter()
         .find(|r| r.slug == repository)
         .ok_or_else(|| format!("{repository:?} is not a fleet member"))?;
-    let template = render::consumer_template(repo.class);
-    let body = render::render_consumer(&template, release_shas, calver)?;
+    let template = render::consumer_template_with_forks(repo.class, manifest.forks());
+    let body =
+        render::render_consumer_with_forks(&template, release_shas, calver, manifest.forks())?;
     let dir = output.join(".github").join("workflows");
     std::fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
     let path = dir.join("ci.yml");
@@ -202,16 +211,31 @@ pub fn render_package_consumer_to_dir(
     repository: &str,
     release_shas: [&str; 3],
     calver: &str,
-    old_signer: Option<(&str, &str, &str)>,
     output: &Path,
 ) -> Result<PathBuf, String> {
+    let manifest = model::FleetManifest::load(root)?;
     let policy = package::PackagePolicy::load(root)?;
-    let body = policy.render_consumer(repository, release_shas, calver, old_signer)?;
+    let releases = release::ReleasePolicy::load(root)?;
+    releases.validate_against(&policy, manifest.forks())?;
+    let body = policy.render_consumer(repository, release_shas, calver)?;
     let dir = output.join(".github").join("workflows");
     std::fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
     let path = dir.join("package-update.yml");
     std::fs::write(&path, body).map_err(|e| format!("writing {}: {e}", path.display()))?;
+    let signer_path = output.join("signer-digests.toml");
+    let signer = releases.render_signer_digests(&policy, repository, calver)?;
+    std::fs::write(&signer_path, signer)
+        .map_err(|e| format!("writing {}: {e}", signer_path.display()))?;
     Ok(path)
+}
+
+/// Run the live release check for one release table row.
+pub fn release_check(root: &Path, calver: &str) -> Result<String, String> {
+    let manifest = model::FleetManifest::load(root)?;
+    let packages = package::PackagePolicy::load(root)?;
+    let releases = release::ReleasePolicy::load(root)?;
+    releases.validate_against(&packages, manifest.forks())?;
+    releases.check_fork_equality(manifest.forks(), calver)
 }
 
 fn write_if_changed(path: &Path, body: &str) -> Result<(), String> {

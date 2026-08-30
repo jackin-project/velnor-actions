@@ -32,10 +32,7 @@ jobs:
     with:
       consumer-repository: ${{ github.repository }}
       channel: ${{ matrix.channel }}
-      current-signer-digest: "@CURRENT_SIGNER_DIGEST@"
-      old-signer-digest: "@OLD_SIGNER_DIGEST@"
-      old-signer-activated-at: "@OLD_SIGNER_ACTIVATED_AT@"
-      old-signer-expires-at: "@OLD_SIGNER_EXPIRES_AT@"
+      release-calver: "@CALVER@"
       branch: package-update/verified/${{ matrix.channel }}
       lane: ${{ matrix.config.lane }}
       writer: ${{ matrix.config.writer }}
@@ -52,10 +49,7 @@ jobs:
     with:
       consumer-repository: ${{ github.repository }}
       channel: ${{ matrix.channel }}
-      current-signer-digest: "@CURRENT_SIGNER_DIGEST@"
-      old-signer-digest: "@OLD_SIGNER_DIGEST@"
-      old-signer-activated-at: "@OLD_SIGNER_ACTIVATED_AT@"
-      old-signer-expires-at: "@OLD_SIGNER_EXPIRES_AT@"
+      release-calver: "@CALVER@"
       branch: package-update/verified/${{ matrix.channel }}
       lane: ${{ matrix.config.lane }}
       writer: ${{ matrix.config.writer }}
@@ -72,10 +66,7 @@ jobs:
     with:
       consumer-repository: ${{ github.repository }}
       channel: ${{ matrix.channel }}
-      current-signer-digest: "@CURRENT_SIGNER_DIGEST@"
-      old-signer-digest: "@OLD_SIGNER_DIGEST@"
-      old-signer-activated-at: "@OLD_SIGNER_ACTIVATED_AT@"
-      old-signer-expires-at: "@OLD_SIGNER_EXPIRES_AT@"
+      release-calver: "@CALVER@"
       branch: package-update/verified/${{ matrix.channel }}
       lane: ${{ matrix.config.lane }}
       writer: ${{ matrix.config.writer }}

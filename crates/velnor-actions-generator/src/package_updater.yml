@@ -10,21 +10,9 @@ on:
       channel:
         required: true
         type: string
-      current-signer-digest:
+      release-calver:
         required: true
         type: string
-      old-signer-digest:
-        required: false
-        type: string
-        default: ""
-      old-signer-activated-at:
-        required: false
-        type: string
-        default: ""
-      old-signer-expires-at:
-        required: false
-        type: string
-        default: ""
       branch:
         required: true
         type: string
@@ -84,12 +72,33 @@ jobs:
         env:
           CONSUMER_REPOSITORY: ${{ inputs.consumer-repository }}
           CHANNEL: ${{ inputs.channel }}
+          RELEASE_CALVER: ${{ inputs.release-calver }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test "$CONSUMER_REPOSITORY" = "$GITHUB_REPOSITORY"
 @CONSUMER_POLICY_CASES@
           grep -Fx -- "$CHANNEL" <<<"$ALLOWED_CHANNELS" >/dev/null
+          [[ "$RELEASE_CALVER" =~ ^20[0-9]{2}\.[0-9]+\.[0-9]+$ ]]
+          signer_file=signer-digests.toml
+          test -f "$signer_file"
+          toml_value() { awk -F' = ' -v key="$1" '$1 == key { gsub(/^"|"$/, "", $2); print $2; exit }' "$signer_file"; }
+          [[ "$(toml_value schema)" = "velnor-actions.signer-digests.v1" ]]
+          [[ "$(toml_value release)" = "$RELEASE_CALVER" ]]
+          [[ "$(toml_value consumer)" = "$CONSUMER_REPOSITORY" ]]
+          [[ "$(toml_value source)" = "$SOURCE_REPOSITORY" ]]
+          SOURCE_OWNER=${SOURCE_REPOSITORY%%/*}
+          [[ "$(toml_value signer_fork)" = "$SOURCE_OWNER/velnor-actions" ]]
+          CURRENT_SIGNER_DIGEST=$(toml_value current_signer_digest)
+          OLD_SIGNER_DIGEST=$(toml_value old_signer_digest)
+          OLD_SIGNER_ACTIVATED_AT=$(toml_value old_signer_activated_at)
+          OLD_SIGNER_EXPIRES_AT=$(toml_value old_signer_expires_at)
+          {
+            printf 'CURRENT_SIGNER_DIGEST=%s\n' "$CURRENT_SIGNER_DIGEST"
+            printf 'OLD_SIGNER_DIGEST=%s\n' "$OLD_SIGNER_DIGEST"
+            printf 'OLD_SIGNER_ACTIVATED_AT=%s\n' "$OLD_SIGNER_ACTIVATED_AT"
+            printf 'OLD_SIGNER_EXPIRES_AT=%s\n' "$OLD_SIGNER_EXPIRES_AT"
+          } >> "$GITHUB_ENV"
           [[ "$SOURCE_REPOSITORY" =~ ^(jackin-project|tailrocks)/[a-z0-9][a-z0-9._-]*$ ]]
           mkdir -m 0700 verified
           printf '%s\n' "$CHANNEL" > verified/channel
@@ -203,10 +212,6 @@ jobs:
         env:
           CONSUMER_REPOSITORY: ${{ inputs.consumer-repository }}
           GH_TOKEN: ${{ github.token }}
-          CURRENT_SIGNER_DIGEST: ${{ inputs.current-signer-digest }}
-          OLD_SIGNER_DIGEST: ${{ inputs.old-signer-digest }}
-          OLD_SIGNER_ACTIVATED_AT: ${{ inputs.old-signer-activated-at }}
-          OLD_SIGNER_EXPIRES_AT: ${{ inputs.old-signer-expires-at }}
           CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail

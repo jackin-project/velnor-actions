@@ -13,11 +13,10 @@ use std::process::{Command, Stdio};
 
 use crate::cache::CacheContract;
 use crate::composite;
-use crate::model::{FleetManifest, OWNERS, is_sha40};
+use crate::model::{FleetManifest, ForkTable, is_sha40};
 use crate::package::{self, PackagePolicy};
 use crate::render::{
     self, ACTIONS_REPO, CALVER_PLACEHOLDER, CANONICAL_OWNER, FLEET_SHA_PLACEHOLDER,
-    OWNER_SHA_PLACEHOLDERS,
 };
 use crate::{ALL_CLASSES, RepositoryClass};
 use serde::Deserialize;
@@ -61,6 +60,8 @@ pub fn audit(root: &Path) -> Result<String, String> {
     let manifest = FleetManifest::load(root)?;
     let caches = CacheContract::load(&root.join("fleet").join("caches.toml"))?;
     let packages = PackagePolicy::load(root)?;
+    let releases = crate::release::ReleasePolicy::load(root)?;
+    releases.validate_against(&packages, manifest.forks())?;
     let remote_closure = load_remote_closure(root)?;
 
     // Composite building blocks must exist and match their canonical bytes exactly
@@ -71,14 +72,14 @@ pub fn audit(root: &Path) -> Result<String, String> {
 
     // Every class template: regenerate and compare committed bytes.
     for class in ALL_CLASSES {
-        let rendered = render::consumer_template(class);
+        let rendered = render::consumer_template_with_forks(class, manifest.forks());
         let committed = read_committed(&template_path(root, class))?;
         require_equal(&committed, &rendered, &template_path_display(class))?;
-        audit_consumer_structure(class, &rendered)?;
+        audit_consumer_structure(class, &rendered, manifest.forks())?;
     }
 
     // Materialize all 28 repositories and prove each equals its class template.
-    audit_materialization(&manifest)?;
+    audit_materialization(&manifest, manifest.forks())?;
 
     // If the block SHA is bound, audit the full callable-workflow closure.
     let block_sha_path = root.join("fleet").join("block-sha");
@@ -86,7 +87,12 @@ pub fn audit(root: &Path) -> Result<String, String> {
         let block_sha = read_block_sha(&block_sha_path)?;
         for class in ALL_CLASSES {
             let contract = manifest.class(class);
-            let rendered = render::callable_workflow(contract, &caches, &block_sha);
+            let rendered = render::callable_workflow_with_forks(
+                contract,
+                &caches,
+                &block_sha,
+                manifest.forks(),
+            );
             let committed = read_committed(&callable_path(root, class))?;
             require_equal(&committed, &rendered, &callable_path_display(class))?;
             audit_callable_structure(class, &rendered, &block_sha, &remote_closure)?;
@@ -529,13 +535,19 @@ fn uses_identities(text: &str) -> Vec<String> {
     identities
 }
 
-fn audit_consumer_structure(class: RepositoryClass, rendered: &str) -> Result<(), String> {
+fn audit_consumer_structure(
+    class: RepositoryClass,
+    rendered: &str,
+    forks: &ForkTable,
+) -> Result<(), String> {
     let what = template_path_display(class);
     let file = render::callable_file_name(class);
 
     // Exactly three static owner-local reusable calls, one per recognized owner,
     // selected only by exact github.repository_owner. No dynamic `uses`.
-    for (owner, release_placeholder) in OWNERS.iter().zip(OWNER_SHA_PLACEHOLDERS) {
+    for fork in forks.entries() {
+        let owner = fork.owner.as_str();
+        let release_placeholder = fork.placeholder.as_str();
         let call = format!(
             "uses: {owner}/{ACTIONS_REPO}/.github/workflows/{file}{release_placeholder} # {CALVER_PLACEHOLDER}"
         );
@@ -547,10 +559,10 @@ fn audit_consumer_structure(class: RepositoryClass, rendered: &str) -> Result<()
             return Err(format!("{what}: missing exact owner guard for {owner}"));
         }
     }
-    if rendered.matches("uses:").count() != OWNERS.len() {
+    if rendered.matches("uses:").count() != forks.entries().len() {
         return Err(format!(
             "{what}: expected exactly {} reusable-workflow calls",
-            OWNERS.len()
+            forks.entries().len()
         ));
     }
     // A dynamic `uses:` (expression in the ref) is forbidden.
@@ -762,20 +774,21 @@ fn audit_admitted_closure(
     Ok(())
 }
 
-fn audit_materialization(manifest: &FleetManifest) -> Result<(), String> {
+fn audit_materialization(manifest: &FleetManifest, forks: &ForkTable) -> Result<(), String> {
     for class in ALL_CLASSES {
-        let template = render::consumer_template(class);
+        let template = render::consumer_template_with_forks(class, forks);
         let release_shas = [AUDIT_RELEASE_SHA; 3];
-        let class_bytes = render::render_consumer(&template, release_shas, AUDIT_CALVER)?;
+        let class_bytes =
+            render::render_consumer_with_forks(&template, release_shas, AUDIT_CALVER, forks)?;
 
         // Three coherent owner references sharing one CalVer. Each SHA is
         // owner-local; the audit fixture intentionally uses the same bytes.
         let want_ref = format!("@{AUDIT_RELEASE_SHA} # {AUDIT_CALVER}");
-        if class_bytes.matches(&want_ref).count() != OWNERS.len() {
+        if class_bytes.matches(&want_ref).count() != forks.entries().len() {
             return Err(format!(
                 "class {} materialization does not bind all {} owner calls to the release",
                 class.code(),
-                OWNERS.len()
+                forks.entries().len()
             ));
         }
         // No placeholder survives; a second substitution is refused.
@@ -785,7 +798,9 @@ fn audit_materialization(manifest: &FleetManifest) -> Result<(), String> {
                 class.code()
             ));
         }
-        if render::render_consumer(&class_bytes, release_shas, AUDIT_CALVER).is_ok() {
+        if render::render_consumer_with_forks(&class_bytes, release_shas, AUDIT_CALVER, forks)
+            .is_ok()
+        {
             return Err(format!(
                 "class {} accepted a second repository-specific substitution",
                 class.code()
@@ -795,7 +810,8 @@ fn audit_materialization(manifest: &FleetManifest) -> Result<(), String> {
         // Every member of the class materializes to the identical bytes: no
         // per-repository fork or slug-specific substitution.
         for repo in manifest.members_of(class) {
-            let repo_bytes = render::render_consumer(&template, release_shas, AUDIT_CALVER)?;
+            let repo_bytes =
+                render::render_consumer_with_forks(&template, release_shas, AUDIT_CALVER, forks)?;
             if repo_bytes != class_bytes {
                 return Err(format!(
                     "repository {} does not materialize to its class {} template bytes",

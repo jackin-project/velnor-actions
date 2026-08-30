@@ -90,6 +90,11 @@ fn write_repos(dir: &Path, body: &str) {
         dir.join("fleet").join("classes.toml"),
     )
     .unwrap();
+    std::fs::copy(
+        common::repo_root().join("fleet").join("forks.toml"),
+        dir.join("fleet").join("forks.toml"),
+    )
+    .unwrap();
 }
 
 fn canonical_repositories_toml() -> String {
@@ -230,6 +235,50 @@ fn audit_passes_on_repo() {
 }
 
 #[test]
+fn fork_and_release_tables_drive_signer_rendering() {
+    let root = common::repo_root();
+    let manifest = FleetManifest::load(&root).unwrap();
+    assert_eq!(manifest.forks().entries().len(), 3);
+    assert_eq!(
+        manifest.forks().entries()[0].placeholder,
+        "@JACKIN_FLEET_SHA@"
+    );
+    let packages = velnor_actions_generator::package::PackagePolicy::load(&root).unwrap();
+    let releases = velnor_actions_generator::release::ReleasePolicy::load(&root).unwrap();
+    releases
+        .validate_against(&packages, manifest.forks())
+        .unwrap();
+    let rendered = releases
+        .render_signer_digests(&packages, "tailrocks/homebrew-holla", "2026.8.32")
+        .unwrap();
+    assert!(rendered.contains("schema = \"velnor-actions.signer-digests.v1\""));
+    assert!(
+        rendered.contains("current_signer_digest = \"84a3d2c5f8f74a3054259ac494581b244bf61ee7\"")
+    );
+    assert!(rendered.contains("old_signer_digest = \"643c5341b160be151a7fae19b89b6a4f8ab3b275\""));
+    let output = common::temp_dir("package-consumer");
+    let package_path = velnor_actions_generator::render_package_consumer_to_dir(
+        &root,
+        "tailrocks/homebrew-holla",
+        [DUMMY_SHA; 3],
+        "2026.8.32",
+        &output,
+    )
+    .unwrap();
+    assert!(package_path.ends_with(Path::new(".github/workflows/package-update.yml")));
+    assert!(output.join("signer-digests.toml").is_file());
+}
+
+#[test]
+fn caller_identity_is_verified_before_optional_operation_routing() {
+    let workflow =
+        std::fs::read_to_string(common::repo_root().join(".github/workflows/ci-code.yml")).unwrap();
+    assert!(workflow.contains("verify_caller\n          correlation=\"ordinary\""));
+    assert!(workflow.contains("verify_caller()"));
+    assert!(workflow.contains("protected_dispatch()"));
+}
+
+#[test]
 fn package_policy_and_workflows_are_closed_and_lane_selectable() {
     use velnor_actions_generator::package::{
         APT_TEMPLATE, PackagePolicy, SIGNER_WORKFLOW, TAP_TEMPLATE, UPDATER_WORKFLOW,
@@ -364,7 +413,7 @@ fn package_generation_writes_exact_callables_and_templates() {
 }
 
 #[test]
-fn package_consumer_renderer_binds_current_and_bounded_old_signers() {
+fn package_consumer_renderer_binds_release_without_inline_signer_state() {
     let policy = velnor_actions_generator::package::PackagePolicy::load(&common::repo_root())
         .expect("package policy loads");
     let current = "1111111111111111111111111111111111111111";
@@ -373,15 +422,9 @@ fn package_consumer_renderer_binds_current_and_bounded_old_signers() {
         "3333333333333333333333333333333333333333",
         "4444444444444444444444444444444444444444",
     ];
-    let old = "2222222222222222222222222222222222222222";
     let rendered = policy
-        .render_consumer(
-            "tailrocks/homebrew-tablerock",
-            owner_shas,
-            "2026.8.6",
-            Some((old, "2026-08-12T00:00:00Z", "2026-09-11T00:00:00Z")),
-        )
-        .expect("bounded rotation renders");
+        .render_consumer("tailrocks/homebrew-tablerock", owner_shas, "2026.8.6")
+        .expect("consumer renders");
     assert_eq!(rendered.matches(current).count(), 1);
     assert_eq!(rendered.matches(owner_shas[1]).count(), 1);
     assert_eq!(rendered.matches(owner_shas[2]).count(), 1);
@@ -389,15 +432,14 @@ fn package_consumer_renderer_binds_current_and_bounded_old_signers() {
         rendered
             .matches("1e062d5bbe329873047ee8a8e79bba0811e53b65")
             .count(),
-        3
+        0
     );
-    assert_eq!(rendered.matches(old).count(), 3);
     assert!(!rendered.contains("@FLEET_SHA@"));
-    assert!(rendered.contains("old-signer-expires-at: \"2026-09-11T00:00:00Z\""));
+    assert!(!rendered.contains("current-signer-digest"));
 
     assert!(
         policy
-            .render_consumer("tailrocks/not-a-consumer", owner_shas, "2026.8.6", None)
+            .render_consumer("tailrocks/not-a-consumer", owner_shas, "2026.8.6")
             .is_err()
     );
     assert!(
@@ -405,28 +447,13 @@ fn package_consumer_renderer_binds_current_and_bounded_old_signers() {
             .render_consumer(
                 "tailrocks/homebrew-tablerock",
                 ["main", owner_shas[1], owner_shas[2]],
-                "2026.8.6",
-                None
+                "2026.8.6"
             )
             .is_err()
     );
     assert!(
         policy
-            .render_consumer("tailrocks/homebrew-tablerock", owner_shas, "v1", None)
-            .is_err()
-    );
-    assert!(
-        policy
-            .render_consumer(
-                "tailrocks/homebrew-tablerock",
-                owner_shas,
-                "2026.8.6",
-                Some((
-                    "1e062d5bbe329873047ee8a8e79bba0811e53b65",
-                    "2026-08-12T00:00:00Z",
-                    "2026-09-11T00:00:00Z"
-                )),
-            )
+            .render_consumer("tailrocks/homebrew-tablerock", owner_shas, "v1")
             .is_err()
     );
 }
@@ -653,23 +680,23 @@ fn release_goldens_bind_consumer_interface_and_callable_metrics_schema() {
         ),
         (
             ".github/workflows/ci-code.yml",
-            "6fd7a6f1fd10f429396f57ecf5ccbc43eb7a879c4b6cc94b3433237a21d6e2e2",
+            "8e9e0d6ffcf64f72b15e60496c829f17e56521d5fdc515e84cc103d112073d43",
         ),
         (
             ".github/workflows/ci-native.yml",
-            "8b86a57259f3ca9bc6c4c178337ddca50adeaad08a172a2fe4c1c29374a2aa93",
+            "c659b809fc7b6742ed40fd067cded1d4db8ebd790263f737c7064827483d6ed4",
         ),
         (
             ".github/workflows/ci-tap.yml",
-            "d5dea1070c659538462da88d30df78e6f1ae271882df9f996637f9ab14ed6cfe",
+            "0dd6df31bad13f323b5511f69d52b4ae562397fd2c0d71ddd88f7c586989993d",
         ),
         (
             ".github/workflows/ci-apt.yml",
-            "cec093168f7c881714bdb3ed550455c8a46b624a6a6fb3bb8f3f9d84e517c385",
+            "d5c24da2df3bc5820b4bb19f6b4ac7311aba4fd6350c92c8e2599904ff0b0c87",
         ),
         (
             ".github/workflows/ci-fixture.yml",
-            "0dbd38edb53c633c148b72260fd256fadf7f275260a424b6626708ed1721607f",
+            "93aaa46fe719ef68c098364c526854c66b26cfa1b35f06612a98a40d28d20070",
         ),
     ] {
         let bytes = std::fs::read(root.join(path)).unwrap();

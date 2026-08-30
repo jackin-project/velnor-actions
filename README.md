@@ -22,7 +22,10 @@ Canonical source of the Velnor Actions fleet.
   (trusted class cache IDs, paths, lock inputs, phases, and compatible restore
   prefixes), and `block-sha` (the
   immutable commit that pins the internal composite-action closure used by the
-  callable workflows — not the consumer release pin).
+  callable workflows — not the consumer release pin). `forks.toml` is the
+  owner/cardinality/placeholder source for every mirror fan-out. `releases.toml`
+  is the single release and signer-digest table. `remote-actions.toml` is the
+  immutable third-party action pin and executable-closure registry.
 - `actions/` — reusable composite building blocks: `run-gate` (runs one named gate
   command identically on either lane), `aggregate` (emits the lane contract), and
   `cache-contract` (fails closed on missing cache authority, quota, attribution,
@@ -33,11 +36,12 @@ Canonical source of the Velnor Actions fleet.
   byte-identical within a class. Each has three owner-local reusable-workflow calls
   (jackin-project / tailrocks / ChainArgos) selected by `github.repository_owner`, a
   owner-local `@<sha> # <CalVer>` release pins, and a fail-closed `ci-required`
-  aggregator.
+  aggregator. Callable workflows re-verify the caller's Git blob and normalized
+  template hash on every run, including ordinary pushes.
 - `crates/velnor-actions-generator/` — the Rust generator: `model` (data + validation),
   `render` (deterministic rendering), `cache` (trusted cache declaration/key
-  validation), `audit` (regeneration, byte, closure, and fail-closed aggregation
-  checks), and the CLI.
+  validation), `release` (fork equality and signer rendering), `audit` (regeneration,
+  byte, closure, and fail-closed aggregation checks), and the CLI.
 
 ## Generator CLI
 
@@ -51,6 +55,12 @@ Canonical source of the Velnor Actions fleet.
   immutable mirror tag; mirror histories need not share commit identities.
 - `audit --root .` — the full fleet audit (prints
   `fleet valid: 28 repositories, 5 classes, 5 templates`).
+- `render-package-consumer --root . --repository OWNER/REPO --jackin-release-sha
+  <40-hex> --tailrocks-release-sha <40-hex> --chainargos-release-sha <40-hex>
+  --calver <CalVer> --output DIR` — render the package updater and its fixed-name
+  `DIR/signer-digests.toml` from `releases.toml`.
+- `release-check --root . --release <CalVer>` — resolve each owner tag and prove
+  fork tree equality (path, mode, and blob identity).
 
 ## Gates
 
@@ -65,3 +75,5 @@ mise run ci
 
 `mise run ci` runs `fmt`, `lint` (clippy `-D warnings`), `test` (cargo-nextest),
 `actionlint`, `deny` (advisory audit), and `generator-check` (the fleet audit).
+The release check is explicit because it contacts the three live GitHub mirrors:
+`mise run release-check`.

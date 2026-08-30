@@ -16,6 +16,132 @@ use crate::RepositoryClass;
 /// The three recognized fleet organizations, in canonical rendering order.
 pub const OWNERS: [&str; 3] = ["jackin-project", "tailrocks", "ChainArgos"];
 
+/// The checked-in fork fan-out table. All owner names, repository identities,
+/// and caller-template placeholders are rendered from this table; the legacy
+/// [`OWNERS`] constant remains only as a compatibility fixture for unit tests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForkTable {
+    forks: Vec<Fork>,
+}
+
+/// One owner-local mirror of the canonical action repository.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fork {
+    pub owner: String,
+    pub repository: String,
+    pub placeholder: String,
+}
+
+impl ForkTable {
+    /// Load and validate `fleet/forks.toml`.
+    pub fn load(root: &Path) -> Result<Self, String> {
+        let path = root.join("fleet/forks.toml");
+        let text = std::fs::read_to_string(&path)
+            .map_err(|e| format!("reading {}: {e}", path.display()))?;
+        let file: ForksFile =
+            toml::from_str(&text).map_err(|e| format!("parsing {}: {e}", path.display()))?;
+        if file.schema != "velnor-actions.forks.v1" {
+            return Err(format!("unknown fork table schema {:?}", file.schema));
+        }
+        if file.fork.len() != OWNERS.len() {
+            return Err(format!(
+                "fork table has {} entries, expected {}",
+                file.fork.len(),
+                OWNERS.len()
+            ));
+        }
+        let mut owners = BTreeSet::new();
+        let mut repositories = BTreeSet::new();
+        let mut forks = Vec::with_capacity(file.fork.len());
+        for entry in file.fork {
+            if !valid_slug_segment(&entry.owner)
+                || entry.repository != format!("{}/velnor-actions", entry.owner)
+            {
+                return Err(format!("invalid fork repository {:?}", entry.repository));
+            }
+            let expected_placeholder = owner_placeholder(&entry.owner)
+                .ok_or_else(|| format!("unknown fork owner {:?}", entry.owner))?;
+            if entry.placeholder != expected_placeholder {
+                return Err(format!(
+                    "fork {} has placeholder {:?}, expected {:?}",
+                    entry.owner, entry.placeholder, expected_placeholder
+                ));
+            }
+            if !owners.insert(entry.owner.clone()) || !repositories.insert(entry.repository.clone())
+            {
+                return Err(format!(
+                    "duplicate fork owner or repository {:?}",
+                    entry.owner
+                ));
+            }
+            forks.push(Fork {
+                owner: entry.owner,
+                repository: entry.repository,
+                placeholder: entry.placeholder,
+            });
+        }
+        Ok(Self { forks })
+    }
+
+    /// Canonical table used by backwards-compatible renderer unit helpers.
+    #[must_use]
+    pub fn canonical() -> Self {
+        Self {
+            forks: OWNERS
+                .iter()
+                .map(|owner| Fork {
+                    owner: (*owner).to_string(),
+                    repository: format!("{owner}/velnor-actions"),
+                    placeholder: owner_placeholder(owner)
+                        .expect("canonical owner placeholder")
+                        .to_string(),
+                })
+                .collect(),
+        }
+    }
+
+    #[must_use]
+    pub fn entries(&self) -> &[Fork] {
+        &self.forks
+    }
+
+    pub fn owners(&self) -> impl Iterator<Item = &str> {
+        self.forks.iter().map(|fork| fork.owner.as_str())
+    }
+
+    /// Reject a repository inventory whose owner set differs from the fork set.
+    pub fn validate_repository_owners(&self, repositories: &[Repository]) -> Result<(), String> {
+        let fork_owners: BTreeSet<_> = self.owners().collect();
+        let repository_owners: BTreeSet<_> = repositories
+            .iter()
+            .map(|repo| repo.organization.as_str())
+            .collect();
+        if fork_owners != repository_owners {
+            return Err(format!(
+                "fork owner set {:?} differs from repository owner set {:?}",
+                fork_owners, repository_owners
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ForksFile {
+    schema: String,
+    #[serde(default)]
+    fork: Vec<ForkEntry>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ForkEntry {
+    owner: String,
+    repository: String,
+    placeholder: String,
+}
+
 /// The code class's standard repository-owned project command. Repository-specific
 /// work composes beneath this single checked-in task; the shared workflow never
 /// branches on repository slug.
@@ -181,6 +307,7 @@ impl Repository {
 pub struct FleetManifest {
     repositories: Vec<Repository>,
     classes: Vec<ClassContract>,
+    forks: ForkTable,
 }
 
 impl FleetManifest {
@@ -193,11 +320,15 @@ impl FleetManifest {
     /// violation (invalid slug/SHA, duplicate or unclassified member, wrong
     /// count, empty gate command, or implicit/invalid applicability).
     pub fn load(root: &Path) -> Result<FleetManifest, String> {
-        let repositories = load_repositories(&root.join("fleet").join("repositories.toml"))?;
+        let forks = ForkTable::load(root)?;
+        let repositories =
+            load_repositories(&root.join("fleet").join("repositories.toml"), &forks)?;
+        forks.validate_repository_owners(&repositories)?;
         let classes = load_classes(&root.join("fleet").join("classes.toml"))?;
         Ok(FleetManifest {
             repositories,
             classes,
+            forks,
         })
     }
 
@@ -230,6 +361,12 @@ impl FleetManifest {
             .filter(|r| r.class == class)
             .collect()
     }
+
+    /// The validated owner/fork fan-out table.
+    #[must_use]
+    pub fn forks(&self) -> &ForkTable {
+        &self.forks
+    }
 }
 
 /// Whether `value` is exactly 40 lowercase hexadecimal characters.
@@ -248,6 +385,15 @@ fn valid_slug_segment(segment: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.')
 }
 
+fn owner_placeholder(owner: &str) -> Option<&'static str> {
+    match owner {
+        "jackin-project" => Some("@JACKIN_FLEET_SHA@"),
+        "tailrocks" => Some("@TAILROCKS_FLEET_SHA@"),
+        "ChainArgos" => Some("@CHAINARGOS_FLEET_SHA@"),
+        _ => None,
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RepositoriesFile {
@@ -263,7 +409,7 @@ struct RepoEntry {
     baseline_sha: String,
 }
 
-fn load_repositories(path: &Path) -> Result<Vec<Repository>, String> {
+fn load_repositories(path: &Path, forks: &ForkTable) -> Result<Vec<Repository>, String> {
     let text =
         std::fs::read_to_string(path).map_err(|e| format!("reading {}: {e}", path.display()))?;
     let file: RepositoriesFile =
@@ -319,9 +465,9 @@ fn load_repositories(path: &Path) -> Result<Vec<Repository>, String> {
         ));
     }
 
-    // Reject any organization outside the three recognized owners.
+    // Reject any organization outside the data-driven fork owner set.
     for repo in &repositories {
-        if !OWNERS.contains(&repo.organization.as_str()) {
+        if !forks.owners().any(|owner| owner == repo.organization) {
             return Err(format!(
                 "member {:?} has unknown organization {:?}",
                 repo.slug, repo.organization
