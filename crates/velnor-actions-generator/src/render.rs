@@ -42,6 +42,9 @@ const CHECKOUT_VERSION: &str = "v7.0.1";
 /// Pinned mise setup action (full 40-hex SHA) and its version comment.
 const MISE_ACTION_REF: &str = "7e36c90d9ab29c415a2384db3006f3ec8a8cc654";
 const MISE_ACTION_VERSION: &str = "v4.2.4";
+// Fleet mirrors may resolve mise "latest" to an old release whose aqua registry
+// predates newer locked tools (e.g. prek 0.5.0), so pin an explicit floor.
+const MISE_VERSION: &str = "2026.8.14";
 /// Pinned local compiler-cache action.
 const SCCACHE_ACTION_REF: &str = "fc920bf0ec8de6ee65d409111f7ec508035751ba";
 const SCCACHE_ACTION_VERSION: &str = "v0.0.11";
@@ -512,6 +515,8 @@ pub fn callable_workflow(
             8,
             &format!("uses: jdx/mise-action@{MISE_ACTION_REF} # {MISE_ACTION_VERSION}"),
         );
+        b.line(8, "with:");
+        b.line(10, &format!("mise-version: \"{MISE_VERSION}\""));
         for gate in &contract.gates {
             if gate.applicability == crate::model::Applicability::Github {
                 gate_step(&mut b, gate, &run_gate);
@@ -1023,6 +1028,8 @@ fn render_cache_proof_jobs(
             8,
             &format!("uses: jdx/mise-action@{MISE_ACTION_REF} # {MISE_ACTION_VERSION}"),
         );
+        b.line(8, "with:");
+        b.line(10, &format!("mise-version: \"{MISE_VERSION}\""));
         for gate in &contract.gates {
             if gate.applicability == crate::model::Applicability::Both {
                 gate_step(b, gate, run_gate);
@@ -2109,6 +2116,8 @@ fn lane_steps(
         8,
         &format!("uses: jdx/mise-action@{MISE_ACTION_REF} # {MISE_ACTION_VERSION}"),
     );
+    b.line(8, "with:");
+    b.line(10, &format!("mise-version: \"{MISE_VERSION}\""));
     for gate in contract.applicable_gates(lane) {
         if gate.applicability == crate::model::Applicability::Both {
             gate_step(b, gate, run_gate);
